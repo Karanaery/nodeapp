@@ -1,0 +1,104 @@
+#Prompt
+Create an AWS CodeCommit repository using CLI.
+Install git-remote-codecommit using pip and clone the repo.
+Add a sample Node.js app (app.js) running on port 8080.
+Create a Dockerfile and buildspec.yaml.
+Create an ECR repository using CLI.
+Provide required IAM permissions.
+Then explain steps to create a CodeBuild project using GUI.
+Finally, deploy the app using App Runner and configure required IAM roles using CLI.
+
+
+#aws configure
+
+#Install git-remote-codecommit
+pip install git-remote-codecommit --break-system-packages
+
+#Create a code commit repo
+aws codecommit create-repository --repository-name demo-node-app
+
+#Clone using the URI
+git clone codecommit::ap-south-1://demo-node-app
+
+#create a simple app.js and package.json and Dockerfile
+nano app.js
+nano package.json
+nano Dockerfile
+
+#Create a buildspec.yml
+nano buildspec.yml
+
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: ap-south-1
+    IMAGE_REPO_NAME: demo-node-app
+    IMAGE_TAG: latest
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+  build:
+    commands:
+      - echo Build Docker image
+      - docker build -t $IMAGE_REPO_NAME .
+      - docker tag $IMAGE_REPO_NAME:latest $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Push to ECR
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+
+
+#push code to the Code commit
+
+#Create a ECR Repository
+
+aws ecr create-repository --repository-name demo-node-app --region ap-south-1
+
+
+#Add policies
+nano trust-policy.json
+####
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "codebuild.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+#####
+
+#run
+aws iam create-role \
+  --role-name codebuild-demo-role \
+  --assume-role-policy-document file://trust-policy.json
+
+
+##Attach policies
+aws iam attach-role-policy \
+  --role-name codebuild-demo-role \
+  --policy-arn arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
+
+aws iam attach-role-policy \
+  --role-name codebuild-demo-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
+
+
+aws iam attach-role-policy \
+  --role-name codebuild-demo-role \
+  --policy-arn arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+
+
+#Create project on Code build
+source > code commit > choose repo > branch > environment > ubuntu > use buildspec.yml >start build
+
+#Deploy with APP RUNNER
+create a service > provide ecr >choose repo > port 8080 > create
+
